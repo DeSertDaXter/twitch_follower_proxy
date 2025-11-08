@@ -1,4 +1,14 @@
 export default async function handler(req, res) {
+  // --- CORS erlauben (wichtig fürs Overlay im Browser/OBS)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Client-ID");
+
+  // Preflight-Anfragen früh beenden
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   try {
     const { broadcaster_id } = req.query;
     if (!broadcaster_id) {
@@ -6,9 +16,9 @@ export default async function handler(req, res) {
     }
 
     // --- ENV prüfen: wir brauchen ein USER-Token mit Scope moderator:read:followers
-    const CLIENT_ID   = process.env.TWITCH_CLIENT_ID;
-    const USER_TOKEN  = process.env.TWITCH_USER_TOKEN; // User-Access-Token (nicht App-Token!)
-    const MODERATOR_ID= process.env.TWITCH_USER_ID;    // die User-ID des Token-Inhabers
+    const CLIENT_ID    = process.env.TWITCH_CLIENT_ID;
+    const USER_TOKEN   = process.env.TWITCH_USER_TOKEN; // User-Access-Token (nicht App-Token!)
+    const MODERATOR_ID = process.env.TWITCH_USER_ID;    // die User-ID des Token-Inhabers
 
     if (!CLIENT_ID || !USER_TOKEN) {
       return res.status(500).json({
@@ -94,6 +104,8 @@ export default async function handler(req, res) {
       }
     }
 
+    // sinnvolle Cache-Policy für Clients (optional)
+    res.setHeader("Cache-Control", "no-store");
     return res.status(200).json({ ok: true, latest, total, userOk });
   } catch (e) {
     return res.status(500).json({ error: "internal", detail: String(e?.message || e) });
