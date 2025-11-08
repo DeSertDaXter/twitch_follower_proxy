@@ -1,4 +1,12 @@
 export default async function handler(req, res) {
+  // --- CORS erlauben + Preflight beantworten
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Client-ID");
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+
   try {
     const { login, id } = req.query;
     if (!login && !id) return res.status(400).json({ error: "missing login or id" });
@@ -66,9 +74,8 @@ export default async function handler(req, res) {
     const f = await fRes.json();
     const total = Number(f.total) || 0;
 
-    res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cache-Control", "max-age=60"); // 60s client cache ok
-
+    // kurze Client-Cache-Dauer zulassen
+    res.setHeader("Cache-Control", "max-age=60");
     return res.status(200).json({
       broadcaster_id: broadcasterId,
       total,
