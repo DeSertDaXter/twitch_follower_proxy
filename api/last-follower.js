@@ -1,113 +1,50 @@
+import { getAccessToken } from "../lib/twitchAuth.js";
+
 export default async function handler(req, res) {
-  // --- CORS erlauben (wichtig fürs Overlay im Browser/OBS)
+  // --- CORS erlauben
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, Client-ID");
-
-  // Preflight-Anfragen früh beenden
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
 
   try {
-    const { broadcaster_id } = req.query;
-    if (!broadcaster_id) {
-      return res.status(400).json({ error: "Missing broadcaster_id" });
+    const broadcasterId = req.query.broadcaster_id || process.env.TWITCH_BROADCASTER_ID;
+    if (!broadcasterId) {
+      return res.status(400).json({ ok: false, error: "Missing broadcaster_id" });
     }
 
-    // --- ENV prüfen: wir brauchen ein USER-Token mit Scope moderator:read:followers
-    const CLIENT_ID    = process.env.TWITCH_CLIENT_ID;
-    const USER_TOKEN   = process.env.TWITCH_USER_TOKEN; // User-Access-Token (nicht App-Token!)
-    const MODERATOR_ID = process.env.TWITCH_USER_ID;    // die User-ID des Token-Inhabers
+    const CLIENT_ID = process.env.TWITCH_CLIENT_ID;
+    if (!CLIENT_ID) return res.status(500).json({ ok: false, error: "missing env TWITCH_CLIENT_ID" });
 
-    if (!CLIENT_ID || !USER_TOKEN) {
-      return res.status(500).json({
-        error: "missing_env",
-        detail: "TWITCH_CLIENT_ID or TWITCH_USER_TOKEN not set",
-      });
-    }
+    const token = await getAccessToken();
 
-    const hdrs = {
+    const headers = {
       "Client-ID": CLIENT_ID,
-      Authorization: `Bearer ${USER_TOKEN}`,
+      Authorization: `Bearer ${token}`,
     };
 
-    // 1) User prüfen (Optional, aber hilfreich fürs Debuggen)
-    let userOk = false;
-    try {
-      const whoResp = await fetch(
-        `https://api.twitch.tv/helix/users?id=${encodeURIComponent(String(broadcaster_id))}`,
-        { headers: hdrs, cache: "no-store" }
-      );
-      const whoJson = await whoResp.json().catch(() => ({}));
-      userOk = Array.isArray(whoJson?.data) && whoJson.data.length > 0;
-    } catch { /* ignoriere */ }
+    const moderatorId = process.env.TWITCH_MODERATOR_ID || broadcasterId;
 
-    // 2) Neuere Route: channels/followers (first=1) – MIT moderator_id!
-    let latest = null;
-    let total = 0;
+    const url = new URL("https://api.twitch.tv/helix/channels/followers");
+    url.searchParams.set("broadcaster_id", String(broadcasterId));
+    url.searchParams.set("moderator_id", String(moderatorId));
+    url.searchParams.set("first", "1");
 
-    const chUrl = new URL("https://api.twitch.tv/helix/channels/followers");
-    chUrl.searchParams.set("broadcaster_id", String(broadcaster_id));
-    chUrl.searchParams.set("first", "1");
-    if (MODERATOR_ID) chUrl.searchParams.set("moderator_id", String(MODERATOR_ID));
+    const r = await fetch(url.toString(), { headers, cache: "no-store" });
+    const j = await r.json().catch(() => ({}));
 
-    const chResp = await fetch(chUrl.toString(), { headers: hdrs, cache: "no-store" });
-
-    if (chResp.ok) {
-      const j = await chResp.json();
-      total = Number(j.total || 0);
-      if (Array.isArray(j.data) && j.data.length > 0) {
-        const r = j.data[0];
-        latest = {
-          user_name:   r.user_name,
-          user_login:  r.user_login,
-          user_id:     r.user_id,
-          followed_at: r.followed_at,
-          source:      "channels/followers",
-          total,
-          userOk,
-        };
-      }
-    } else if (chResp.status === 401 || chResp.status === 403) {
-      // Typischer Fehler: falsches Token/Scope → gib lesbare Info zurück
-      const msg = await chResp.text().catch(() => "");
-      return res.status(403).json({
-        error: "forbidden",
-        detail: "Make sure TWITCH_USER_TOKEN is a USER token with scope 'moderator:read:followers' and moderator_id is set.",
-        upstream: msg,
+    if (!r.ok) {
+      return res.status(r.status).json({
+        ok: false,
+        error: "last-follower lookup failed",
+        detail: j,
+        hint: "Wenn das 401 ist: /api/auth/login einmal ausführen, damit Tokens in KV gespeichert sind.",
       });
     }
 
-    // 3) Fallback: users/follows (to_id=...) – liefert u.U. Daten, wird aber von Twitch weniger priorisiert
-    if (!latest) {
-      const ufUrl = new URL("https://api.twitch.tv/helix/users/follows");
-      ufUrl.searchParams.set("to_id", String(broadcaster_id));
-      ufUrl.searchParams.set("first", "1");
-
-      const ufResp = await fetch(ufUrl.toString(), { headers: hdrs, cache: "no-store" });
-      if (ufResp.ok) {
-        const j = await ufResp.json();
-        total = Number(j.total || 0);
-        if (Array.isArray(j.data) && j.data.length > 0) {
-          const r = j.data[0]; // { from_id, from_login?, from_name, followed_at }
-          latest = {
-            user_name:   r.from_name,
-            user_login:  r.from_login || r.from_name,
-            user_id:     r.from_id,
-            followed_at: r.followed_at,
-            source:      "users/follows",
-            total,
-            userOk,
-          };
-        }
-      }
-    }
-
-    // sinnvolle Cache-Policy für Clients (optional)
-    res.setHeader("Cache-Control", "no-store");
-    return res.status(200).json({ ok: true, latest, total, userOk });
+    const latest = j?.data?.[0] || null;
+    return res.status(200).json({ ok: true, latest, total: Number(j.total) || 0 });
   } catch (e) {
-    return res.status(500).json({ error: "internal", detail: String(e?.message || e) });
+    return res.status(500).json({ ok: false, error: "internal", detail: String(e?.message || e) });
   }
 }
