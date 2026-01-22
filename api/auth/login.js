@@ -1,17 +1,15 @@
-module.exports = (req, res) => {
+export default function handler(req, res) {
   const clientId = process.env.TWITCH_CLIENT_ID;
   const redirectUri = process.env.TWITCH_REDIRECT_URI;
 
   if (!clientId || !redirectUri) {
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    return res.end(JSON.stringify({
+    return res.status(500).json({
       error: "missing_env",
       missing: {
         TWITCH_CLIENT_ID: !clientId,
-        TWITCH_REDIRECT_URI: !redirectUri
-      }
-    }));
+        TWITCH_REDIRECT_URI: !redirectUri,
+      },
+    });
   }
 
   const params = new URLSearchParams({
@@ -22,8 +20,6 @@ module.exports = (req, res) => {
   });
 
   const url = `https://id.twitch.tv/oauth2/authorize?${params.toString()}`;
+  return res.redirect(url);
+}
 
-  res.statusCode = 302;
-  res.setHeader("Location", url);
-  res.end();
-};
