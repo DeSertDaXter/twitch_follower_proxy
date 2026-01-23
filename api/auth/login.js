@@ -1,6 +1,6 @@
 export default function handler(req, res) {
   const clientId = process.env.TWITCH_CLIENT_ID;
-  const redirectUri = process.env.TWITCH_REDIRECT_URI;
+  const redirectUri = (process.env.TWITCH_REDIRECT_URI || "").trim();
 
   if (!clientId || !redirectUri) {
     return res.status(500).json({
@@ -8,17 +8,6 @@ export default function handler(req, res) {
       missing: {
         TWITCH_CLIENT_ID: !clientId,
         TWITCH_REDIRECT_URI: !redirectUri,
-      },
-    });
-  }
-
-  // DEBUG: optional per ?debug=1 anzeigen
-  if (req.query.debug === "1") {
-    return res.status(200).json({
-      ok: true,
-      using: {
-        TWITCH_CLIENT_ID: clientId,
-        TWITCH_REDIRECT_URI: redirectUri,
       },
     });
   }
