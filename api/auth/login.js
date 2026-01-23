@@ -12,6 +12,17 @@ export default function handler(req, res) {
     });
   }
 
+  // DEBUG: optional per ?debug=1 anzeigen
+  if (req.query.debug === "1") {
+    return res.status(200).json({
+      ok: true,
+      using: {
+        TWITCH_CLIENT_ID: clientId,
+        TWITCH_REDIRECT_URI: redirectUri,
+      },
+    });
+  }
+
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
