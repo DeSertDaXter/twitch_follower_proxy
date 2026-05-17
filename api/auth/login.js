@@ -19,7 +19,5 @@ export default function handler(req, res) {
     scope: "moderator:read:followers",
   });
 
-  const url = `https://id.twitch.tv/oauth2/authorize?${params.toString()}`;
-  return res.redirect(url);
+  return res.redirect(`https://id.twitch.tv/oauth2/authorize?${params.toString()}`);
 }
-
